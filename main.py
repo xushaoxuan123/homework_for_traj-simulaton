@@ -3,7 +3,7 @@ import torch.nn as nn
 from dataset import get_dataset, process_data
 from model import get_model
 from trainer import get_trainer
-from utils import random_seed, get_optimizer, get_scheduler, plot_trajectories, plot_loss
+from utils import random_seed, get_optimizer, get_scheduler, plot_trajectories, plot_loss, plot_trajectories_2d
 import argparse
 import os
 import logging
@@ -27,7 +27,7 @@ def parse_args():
                         help='input size for model')
     parser.add_argument('--hidden_size', type=int, default=128)
     parser.add_argument('--num_layers', type=int, default=2)
-    parser.add_argument('--optimizer', type=str, default='sgd',)
+    parser.add_argument('--optimizer', type=str, default='adam',)
     parser.add_argument('--scheduler', type=str, default='step',)
     parser.add_argument('--step_size', type=int, default=10)
     parser.add_argument('--gamma', type=float, default=0.1)
@@ -41,7 +41,7 @@ def parse_args():
     return args
 if __name__ == '__main__':
     args = parse_args()
-    save_path = './results/'+ args.model + '_' + str(args.learning_rate) + '_' +  str(args.alpha) +'_' + str(args.length) + '_' + str(args.window)  + '_' + args.learning_strategy + '_' + args.target_strategy 
+    save_path = './results/'+ args.model + '_' + str(args.learning_rate) + '_' +  str(args.alpha)+ '_' + args.optimizer +'_' + str(args.length) + '_' + str(args.window)  + '_' + args.learning_strategy + '_' + args.target_strategy 
     args.save_path = save_path  
     random_seed(args.seed)
     model = get_model(args)
@@ -63,9 +63,14 @@ if __name__ == '__main__':
     if args.mode == 'train':
         trainer.fit(model, train_dataset, test_dataset, optimizer, scheduler, logger)
     trainer.load(model)
-    prediction, label = trainer.predict(model, test_dataset)
-    prediction = prediction.detach().numpy()
-    label = label.detach().numpy()
-    plot_loss(trainer.train_loss, trainer.valid_loss,save_path)
-    plot_trajectories(prediction, label, save_path)
+    for mode in ['subset', 'all']:
+        if_show = False
+        if args.mode == 'test':
+            if_show = False
+        prediction, label = trainer.predict(model, test_dataset, mode = mode)
+        prediction = prediction.detach().numpy()
+        label = label.detach().numpy()
+        plot_trajectories(prediction, label, save_path, if_show, mode)
+        plot_trajectories_2d(prediction, label, save_path, if_show)
+
 

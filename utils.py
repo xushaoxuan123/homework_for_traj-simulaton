@@ -43,7 +43,8 @@ def plot_loss(train_loss, valid_loss, save_path=None):
     plt.savefig(save_path + '/loss.png')
     plt.show()
     plt.close()
-def plot_trajectories(pred, true, save_path=None):
+
+def plot_trajectories(pred, true, save_path=None, if_show=True, mode='all'):
    """
    pred: (5, 20, 3) - 预测值
    true: (5, 20, 3) - 真实值
@@ -68,7 +69,7 @@ def plot_trajectories(pred, true, save_path=None):
                'b--', label='Ground Truth')
        
        # 添加标题和图例
-       ax.set_title(f'Trajectory {i+1}')
+       ax.set_title(f'Trajectory {i+1} {mode}')
        ax.legend()
        
        # 添加坐标轴标签
@@ -77,6 +78,51 @@ def plot_trajectories(pred, true, save_path=None):
        ax.set_zlabel('Z')
    
    plt.tight_layout()
-   plt.savefig(save_path + '/result.png')
+   plt.savefig(save_path + f'/result_{mode}.png')
    plt.show()
    plt.close()
+
+def plot_trajectories_2d(pred_traj, true_traj, save_path=None, if_show=True, mode='all'):
+    """
+    在一张图上绘制单个轨迹的所有坐标预测值和真值
+    
+    参数:
+    pred_traj: numpy array - 预测轨迹, shape (sequence_length, 3)
+    true_traj: numpy array - 真实轨迹, shape (sequence_length, 3)
+    save_path: str - 保存路径
+    traj_idx: int - 轨迹索引，用于文件命名
+    """
+    trajs = len(pred_traj)
+    for traj_idx in range(trajs):
+        plt.figure(figsize=(10, 6))
+        
+        coords = ['X', 'Y', 'Z']
+        line_styles = ['--', '-'] 
+        colors = ['blue', 'red', 'green']  # 每个坐标轴用不同颜色
+        
+        # 绘制预测值和真值
+        for i in range(3):  # 三个坐标
+            # 绘制预测值
+            plt.plot(pred_traj[traj_idx,:, i], line_styles[0], 
+                    color=colors[i], label=f'Predicted {coords[i]}',
+                    linewidth=2)
+            # 绘制真值
+            plt.plot(true_traj[traj_idx,:, i], line_styles[1], 
+                    color=colors[i], label=f'Ground Truth {coords[i]}',
+                    linewidth=2)
+        
+        plt.title(f'Trajectory {traj_idx + 1}_{mode}')
+        plt.xlabel('Time Step')
+        plt.ylabel('Position')
+        plt.grid(True)
+        plt.legend()
+        
+        # 调整布局
+        plt.tight_layout()
+        
+        # 保存图片
+        if save_path is not None:
+            save_file = save_path+ f'/trajectory_{traj_idx + 1}_{mode}.png'
+            plt.savefig(save_file, bbox_inches='tight', dpi=300)
+        plt.show()
+        plt.close()

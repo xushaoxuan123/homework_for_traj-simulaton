@@ -51,6 +51,7 @@ def process(dataset):
         polynomia_feature = polynomia_feature.unsqueeze(2)
         polynomia_feature = torch.bmm(polynomia_feature, polynomia_feature.permute(0,2,1)).squeeze(2)
         polynomia_feature = polynomia_feature.flatten(1,2)
+        polynomia_feature = torch.cat([dataset[i], polynomia_feature], dim=1)
         if i > 0:
             speed = dataset[i] - dataset[i-1]
         else:

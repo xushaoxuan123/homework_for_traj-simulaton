@@ -38,6 +38,7 @@ class Normal_trainer:
                 self.save(model)
             scheduler.step()
         self.save_loss()
+        logger.info(f'best valid loss: {self.best}')
     def train(self, model, train_dataset, optimizer):
         model.train()
         criterion = nn.MSELoss()  # 先创建MSELoss实例
@@ -87,12 +88,25 @@ class Normal_trainer:
         model.load_state_dict(torch.load(self.save_path + f'/{self.model_name}_model.pth'))
         self.train_loss = torch.load(self.save_path + '/train_loss.pth') 
         self.valid_loss = torch.load(self.save_path + '/valid_loss.pth')
-    def predict(self,model, dataset):
+    def predict(self,model, dataset, mode = 'all'):
         model.eval()
         torch.enable_grad(False)
-        input = dataset['input'][:,:self.length, :self.input_size]
-        label = dataset['input'][:,self.length:self.length + self.window, :3]
-        output = model(input)
+        if mode == 'subset':
+            input = dataset['input'][:,:self.length, :self.input_size]
+            label = dataset['input'][:,self.length:self.length + self.window, :3]
+            output = model(input)
+        else:
+            outputs = []
+            input = dataset['input'][:,:self.length, :self.input_size]
+            for i in range(self.window + self.length, dataset['input'].shape[1], self.window):
+                output = model(input)
+                outputs.append(output)
+                output = process(output)
+                input = output[:,-self.length:, :self.input_size]
+            output = model(input)
+            outputs.append(output[:,:30,:])
+            label = dataset['input'][:,self.length:, :3]
+            output = torch.cat(outputs, dim = 1)
         torch.enable_grad(True)
         return output, label
 

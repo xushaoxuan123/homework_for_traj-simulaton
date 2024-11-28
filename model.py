@@ -68,7 +68,9 @@ class Transformer_model(nn.Module):
     def forward(self, x, label):
         batch_size = x.size(0)        
         if label == None:
+            tgt = torch.zeros(batch_size, self.output_len, self.input_size)
             x = self.positional_encoding(x)
+
             output = self.transformer(x, x)
             output = output.permute(0, 2, 1)
             output = self.linear(output)
@@ -80,24 +82,34 @@ class Transformer_model(nn.Module):
 class Transformer_model_linear(nn.Module):
     def __init__(self, args):
         super(Transformer_model_linear, self).__init__()
-        self.transformer = nn.Transformer(
-            d_model=args.input_size,
-            nhead=1,
-            num_encoder_layers=2,
-            num_decoder_layers=2,
-            dim_feedforward=256,
-            dropout=0.1
+        self.transformer = nn.TransformerEncoder(
+            nn.TransformerEncoderLayer(
+                d_model=args.input_size,
+                nhead=3,
+                dim_feedforward=256,
+                dropout=0.1,
+                batch_first=True
+            ),
+            num_layers=2
         )
         self.linear = nn.Linear(args.input_size, 3)
         self.fc = nn.Linear(args.length, args.window)  
         self.output_len = args.window
     def forward(self, x):
-        output = self.transformer(x, x)
+        output = self.transformer(x)
         output = output.permute(0, 2, 1)
         output = self.fc(output)
         output = output.permute(0, 2, 1)
         output = self.linear(output)
         return output
+#龙格库塔
+class RungeKutta(nn.Module):
+    def __init__(self, args):
+        super(RungeKutta, self).__init__()
+        self.linear = nn.Linear(args.input_size, 3)
+        self.output_len = args.window
+    def forward(self, x):
+        pass
 def get_model(args):
     if args.model == 'lstm':
         return Model(args)

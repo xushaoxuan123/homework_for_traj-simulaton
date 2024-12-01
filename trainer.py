@@ -6,6 +6,10 @@ def get_trainer(args):
         return Normal_trainer(args)
     elif args.learning_strategy == 'curriculum_learning':
         return Curriculum_trainer(args)
+    elif args.learning_strategy == 'RK4':
+        return RKTrainer(args)
+    elif args.learning_strategy == 'polynomial':
+        return Polynomial_trainer(args)
     else:
         raise ValueError('Invalid learning strategy')
     
@@ -57,6 +61,7 @@ class Normal_trainer:
                 loss += loss_a
                 _loss_a += loss_a.item()
             loss.backward()
+            # torch.nn.utils.clip_grad_norm_(model.parameters(), 10)
             optimizer.step()
             count += 1
         return _loss/(count), _loss_a/(count)
@@ -91,24 +96,37 @@ class Normal_trainer:
     def predict(self,model, dataset, mode = 'all'):
         model.eval()
         torch.enable_grad(False)
+        criterion = nn.MSELoss()
         if mode == 'subset':
             input = dataset['input'][:,:self.length, :self.input_size]
             label = dataset['input'][:,self.length:self.length + self.window, :3]
             output = model(input)
+            loss = criterion(output, label)
         else:
             outputs = []
+            _loss = 0
+            count = 0
             input = dataset['input'][:,:self.length, :self.input_size]
             for i in range(self.window + self.length, dataset['input'].shape[1], self.window):
                 output = model(input)
                 outputs.append(output)
+                label = dataset['input'][:,i - self.window:i, :3]
+                loss = criterion(output, label)
+                _loss += loss.item()
                 output = process(output)
                 input = output[:,-self.length:, :self.input_size]
+                count += 1
             output = model(input)
             outputs.append(output[:,:30,:])
+            label = dataset['input'][:,-30:, :3]
+            count += 1
+            loss = criterion(output[:,:30,:], label)
             label = dataset['input'][:,self.length:, :3]
             output = torch.cat(outputs, dim = 1)
+            _loss += loss.item()
+            loss = _loss/count
         torch.enable_grad(True)
-        return output, label
+        return output, label, loss
 
 class Curriculum_trainer():
     def __init__(self, model, train_dataset, test_dataset, target_strategy, learing_strategy):
@@ -125,3 +143,83 @@ class Curriculum_trainer():
         pass
     def load(self):
         pass
+
+class Polynomial_trainer(Normal_trainer):
+    def __init__(self,args):
+        super().__init__(args)
+        self.input_size = 3
+
+class RKTrainer(Normal_trainer):
+    def __init__(self, args):
+        super().__init__(args)
+        self.input_size = 3
+    def train(self, model, train_dataset, optimizer):
+        criterion = nn.MSELoss()
+        _loss = 0
+        count = 0
+        speed = torch.zeros_like(train_dataset['input'][:,0, :self.input_size])
+        for i in range(train_dataset['input'].shape[1]-1):
+            input = train_dataset['input'][:,i, :self.input_size]
+            label = train_dataset['input'][:,i + 1, :3]
+            optimizer.zero_grad()
+            output = model(input,speed)
+            speed = label - input
+            loss = criterion(output, label)
+            loss.backward()
+            _loss += loss.item()
+            count += 1
+            optimizer.step()
+        return (_loss/(count), 0)
+    def test(self, model, test_dataset):
+        criterion = nn.MSELoss()
+        _loss = 0
+        count = 0
+        speed = torch.zeros_like(test_dataset['input'][:,0, :self.input_size])
+        for i in range(test_dataset['input'].shape[1]-1):
+            input = test_dataset['input'][:,i, :self.input_size]
+            label = test_dataset['input'][:,i + 1, :3]
+            output = model(input, speed)
+            speed = label - input
+            loss = criterion(output, label)
+            _loss += loss.item()
+            count += 1
+        return _loss/(count)
+    def predict(self,model, dataset, mode = 'all'):
+        criterion = nn.MSELoss()
+        if mode == 'subset':
+            outputs = []
+            _loss = 0
+            count = 0
+            input = dataset['input'][:,0, :self.input_size]
+            speed = dataset['input'][:,1, :self.input_size] - dataset['input'][:,0, :self.input_size]
+            for i in range(1,10):
+                output = model(input,speed)
+                outputs.append(output)
+                speed = output - input
+                label = dataset['input'][:,i + 1, :3]
+                loss = criterion(output, label)
+                _loss += loss.item()
+                input = output
+                count += 1
+            label = dataset['input'][:,2:11, :3]
+            output = torch.stack(outputs,dim=1)
+            loss = _loss/count
+        else:
+            outputs = []
+            _loss = 0
+            count = 0
+            input = dataset['input'][:,0, :self.input_size]
+            speed = dataset['input'][:,1, :self.input_size] - dataset['input'][:,0, :self.input_size]
+            for i in range(1,dataset['input'].shape[1] - 1):
+                output = model(input, speed)
+                outputs.append(output)
+                speed = output - input
+                label = dataset['input'][:,i + 1, :3]
+                loss = criterion(output, label)
+                _loss += loss.item()
+                input = output
+                count += 1
+            loss = _loss/count
+            label = dataset['input'][:,2:, :3]
+            output = torch.stack(outputs, dim = 1)
+        return output, label, loss

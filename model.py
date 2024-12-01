@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 import math
+from dataset import process
 def generate_square_subsequent_mask( sz):
     mask = (torch.triu(torch.ones(sz, sz)) == 1).transpose(0, 1)
     mask = mask.float().masked_fill(mask == 0, float('-inf')).masked_fill(mask == 1, float(0.0))
@@ -102,14 +103,36 @@ class Transformer_model_linear(nn.Module):
         output = output.permute(0, 2, 1)
         output = self.linear(output)
         return output
-#龙格库塔
-class RungeKutta(nn.Module):
+class Polynomial_model(nn.Module):
     def __init__(self, args):
-        super(RungeKutta, self).__init__()
-        self.linear = nn.Linear(args.input_size, 3)
-        self.output_len = args.window
+        super(Polynomial_model, self).__init__()
+        self.linear = nn.Sequential(nn.Linear(9 * args.length, 128), nn.ReLU(), nn.Linear(128, 256), nn.ReLU(), nn.Linear(256, 3 * args.window))
+        self.window = args.window
     def forward(self, x):
-        pass
+        polynomia_feature = torch.cat((x, x**2, x**3), dim=1)
+        polynomia_feature = polynomia_feature.flatten(1,2)
+        output = self.linear(polynomia_feature)
+        output = output.view(-1, self.window, 3)
+        return output
+#4阶龙格库塔
+class RungeKutta_4(nn.Module):
+    def __init__(self, args):
+        super(RungeKutta_4, self).__init__()
+        self.linear = nn.Sequential(nn.Linear(12, 128), nn.ReLU(), nn.Linear(128, 256), nn.ReLU(), nn.Linear(256, 3))
+        self.h = args.h
+    def process_data(self, x,k):
+        polynomia_feature = torch.cat((x, x**2, x**3), dim=1)
+        polynomia_feature = torch.cat((polynomia_feature, k), dim=1)
+        return polynomia_feature
+    def forward(self, x, speed):
+        k1 = self.linear(self.process_data(x, speed))
+        # k2 = self.linear(self.process_data(x[:,:3] + self.h/2 * k1, k1*2))
+        # k3 = self.linear(self.process_data(x[:,:3] + self.h/2 * k2, k2*2))
+        # k4 = self.linear(self.process_data(x[:,:3] + self.h * k3, k3))
+        k2 = self.linear(self.process_data(x + self.h/2 * k1, 2 * k1))
+        k3 = self.linear(self.process_data(x + self.h/2 * k2, 2 * k2))
+        k4 = self.linear(self.process_data(x + self.h * k3, k3))
+        return x + self.h/6 * (k1 + 2 * k2 + 2 * k3 + k4)
 def get_model(args):
     if args.model == 'lstm':
         return Model(args)
@@ -118,3 +141,7 @@ def get_model(args):
         return Transformer_model(args)
     elif args.model == 'transformer_linear':
         return Transformer_model_linear(args)
+    elif args.model == 'rk4':
+        return RungeKutta_4(args)
+    elif args.model == 'linear':
+        return Polynomial_model(args)

@@ -27,28 +27,20 @@ class Model(nn.Module):
     def __init__(self, args):
         super(Model, self).__init__()
         self.lstm = nn.LSTM(input_size=args.input_size, hidden_size=args.hidden_size, num_layers=args.num_layers, batch_first=True)
-        self.attention = nn.MultiheadAttention(
-            embed_dim=args.hidden_size,
-            num_heads=4,
-            batch_first=True
-        )
-        self.query_rnn = nn.GRU(
-            args.hidden_size, 
-            args.hidden_size,
-            batch_first=True
-        )
+        self.decoder = nn.LSTM(input_size=args.hidden_size, hidden_size=args.hidden_size, num_layers=args.num_layers, batch_first=True)
         self.linear = nn.Linear(args.hidden_size, 3)
         self.output_len = args.window   
         self.hidden_size = args.hidden_size
         self.linear_out = nn.Linear(args.length, args.window)
     def forward(self,x):
-        batch_size = x.size(0)
         output, (h_n,c_n) = self.lstm(x)
-        output = output.permute(0, 2, 1)
-        output = self.linear_out(output)
-        output = output.permute(0, 2, 1)
-        output = self.linear(output)
-        return output
+        outputs = [output[:,-1,:]]
+        outputs = torch.stack(outputs, dim=1)
+        for i in range(self.output_len):
+            output, (h_n,c_n) = self.decoder(outputs)
+            outputs = torch.cat((outputs, output[:,-1,:].unsqueeze(1)), dim=1)
+        output = self.linear(outputs)
+        return output[:,1:,:]
 
 class Transformer_model(nn.Module):
     def __init__(self, args):
@@ -118,20 +110,19 @@ class Polynomial_model(nn.Module):
 class RungeKutta_4(nn.Module):
     def __init__(self, args):
         super(RungeKutta_4, self).__init__()
-        self.linear = nn.Sequential(nn.Linear(12, 128), nn.ReLU(), nn.Linear(128, 256), nn.ReLU(), nn.Linear(256, 3))
+        self.linear = nn.Sequential(nn.Linear(3, 128), nn.ReLU(), nn.Linear(128, 64), nn.ReLU(), nn.Linear(64, 3))
         self.h = args.h
-    def process_data(self, x,k):
-        polynomia_feature = torch.cat((x, x**2, x**3), dim=1)
-        polynomia_feature = torch.cat((polynomia_feature, k), dim=1)
-        return polynomia_feature
-    def forward(self, x, speed):
-        k1 = self.linear(self.process_data(x, speed))
+    def process_data(self, x, t):
+        polynomia_feature = torch.cat((x, t), dim=1)
+        return x
+    def forward(self, x, t):
+        k1 = self.linear(self.process_data(x,t))
         # k2 = self.linear(self.process_data(x[:,:3] + self.h/2 * k1, k1*2))
         # k3 = self.linear(self.process_data(x[:,:3] + self.h/2 * k2, k2*2))
         # k4 = self.linear(self.process_data(x[:,:3] + self.h * k3, k3))
-        k2 = self.linear(self.process_data(x + self.h/2 * k1, 2 * k1))
-        k3 = self.linear(self.process_data(x + self.h/2 * k2, 2 * k2))
-        k4 = self.linear(self.process_data(x + self.h * k3, k3))
+        k2 = self.linear(self.process_data(x + self.h/2 * k1, t + self.h/2))
+        k3 = self.linear(self.process_data(x + self.h/2 * k2, t + self.h/2))
+        k4 = self.linear(self.process_data(x + self.h * k3, t + self.h))
         return x + self.h/6 * (k1 + 2 * k2 + 2 * k3 + k4)
 def get_model(args):
     if args.model == 'lstm':

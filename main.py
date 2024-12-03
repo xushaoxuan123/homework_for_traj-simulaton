@@ -23,7 +23,7 @@ def parse_args():
                         help='random seed for training')
     parser.add_argument('--model', type=str, default='lstm',
                         help='model for training')
-    parser.add_argument('--input_size', type=int, default=93,
+    parser.add_argument('--input_size', type=int, default=3,
                         help='input size for model')
     parser.add_argument('--hidden_size', type=int, default=128)
     parser.add_argument('--num_layers', type=int, default=2)
@@ -32,12 +32,12 @@ def parse_args():
     parser.add_argument('--step_size', type=int, default=10)
     parser.add_argument('--gamma', type=float, default=0.1)
     parser.add_argument('--factor', type=float, default=0.1)
-    parser.add_argument('--length', type=int, default=50)
+    parser.add_argument('--length', type=int, default=20)
     parser.add_argument('--window', type=int, default=50)
     parser.add_argument('--alpha', type=float, default=0.01)
     parser.add_argument('--mode', type=str, default='train')
     parser.add_argument('--if_ploynomia', type=bool, default=True)
-    parser.add_argument('--h', type=float, default=0.1)
+    parser.add_argument('--h', type=float, default=0.01)
     args = parser.parse_args()
     return args
 if __name__ == '__main__':
@@ -73,6 +73,7 @@ if __name__ == '__main__':
             if_show = False
         prediction, label, loss = trainer.predict(model, test_dataset, mode = mode)
         logger.info(f'{mode} Loss: {loss}')
+        print(f'{mode} Loss: {loss}')
         prediction = prediction.detach().numpy()
         label = label.detach().numpy()
         plot_trajectories(prediction, label, save_path, if_show, mode)

@@ -28,7 +28,7 @@ class Normal_trainer:
         self.save_path = args.save_path
     def fit(self,model, train_dataset, test_dataset, optimizer, scheduler, logger):
         for epoch in range(self.epoch):
-            train_loss = self.train(model, train_dataset, optimizer)
+            train_loss = self.train(model, train_dataset, optimizer, epoch)
             print('epoch:', epoch)
             print('train_loss:', train_loss)
             logger.info(f'epoch: {epoch}, train_loss: {train_loss}')
@@ -43,7 +43,7 @@ class Normal_trainer:
             scheduler.step()
         self.save_loss()
         logger.info(f'best valid loss: {self.best}')
-    def train(self, model, train_dataset, optimizer):
+    def train(self, model, train_dataset, optimizer, epoch):
         model.train()
         criterion = nn.MSELoss()  # 先创建MSELoss实例
         _loss = 0
@@ -72,13 +72,14 @@ class Normal_trainer:
         input = test_dataset['input'][:,:self.length, :]
         _loss = 0
         count = 0
+        input = test_dataset['input'][:,: 0 + self.length, :self.input_size]
+
         for i in range(test_dataset['input'].shape[1] - self.length - self.window):
-            input = test_dataset['input'][:,i: i + self.length, :self.input_size]
             label = test_dataset['input'][:,i + self.length: i+ self.length + self.window, :3]
             output = model(input)
             loss = criterion(output, label)
             output = process(output)
-            # input = torch.cat((input[:,self.window:,:], output), dim = 1)
+            input = output[:,-self.length:, :self.input_size]
             _loss += loss.item()    
             count += 1
         torch.enable_grad(True)
@@ -153,19 +154,29 @@ class RKTrainer(Normal_trainer):
     def __init__(self, args):
         super().__init__(args)
         self.input_size = 3
-    def train(self, model, train_dataset, optimizer):
+    def train(self, model, train_dataset, optimizer, epoch):
         criterion = nn.MSELoss()
         _loss = 0
         count = 0
         speed = torch.zeros_like(train_dataset['input'][:,0, :self.input_size])
-        for i in range(train_dataset['input'].shape[1]-1):
+        for i in range(train_dataset['input'].shape[1]-self.window):
             input = train_dataset['input'][:,i, :self.input_size]
-            label = train_dataset['input'][:,i + 1, :3]
+            label = train_dataset['input'][:,i + 30, :3]
             optimizer.zero_grad()
-            output = model(input,speed)
-            speed = label - input
-            loss = criterion(output, label)
-            loss.backward()
+            outputs = []
+            loss = 0
+            for j in range(round(30)):
+                time = (i+j)*0.01
+                time = torch.tensor(time)
+                time = time.repeat(input.shape[0],1)
+                output = model(input, time)
+                outputs.append(output)
+                input = output.clone()
+                if j == 0:
+                    loss = criterion(output, train_dataset['input'][:,i+1, :3])
+            loss = loss + criterion(output, label)
+            loss.backward(retain_graph=True)
+            torch.nn.utils.clip_grad_norm_(model.parameters(), 1)
             _loss += loss.item()
             count += 1
             optimizer.step()
@@ -175,14 +186,18 @@ class RKTrainer(Normal_trainer):
         _loss = 0
         count = 0
         speed = torch.zeros_like(test_dataset['input'][:,0, :self.input_size])
+        input = test_dataset['input'][:,0, :self.input_size]
         for i in range(test_dataset['input'].shape[1]-1):
-            input = test_dataset['input'][:,i, :self.input_size]
             label = test_dataset['input'][:,i + 1, :3]
-            output = model(input, speed)
+            time = (i)*0.01
+            time = torch.tensor(time)
+            time = time.repeat(input.shape[0],1)
+            output = model(input, time)
             speed = label - input
             loss = criterion(output, label)
             _loss += loss.item()
             count += 1
+            input = output
         return _loss/(count)
     def predict(self,model, dataset, mode = 'all'):
         criterion = nn.MSELoss()
@@ -192,8 +207,11 @@ class RKTrainer(Normal_trainer):
             count = 0
             input = dataset['input'][:,0, :self.input_size]
             speed = dataset['input'][:,1, :self.input_size] - dataset['input'][:,0, :self.input_size]
-            for i in range(1,10):
-                output = model(input,speed)
+            for i in range(50):
+                time = (i)*0.01
+                time = torch.tensor(time)
+                time = time.repeat(input.shape[0],1)
+                output = model(input, time)
                 outputs.append(output)
                 speed = output - input
                 label = dataset['input'][:,i + 1, :3]
@@ -201,7 +219,7 @@ class RKTrainer(Normal_trainer):
                 _loss += loss.item()
                 input = output
                 count += 1
-            label = dataset['input'][:,2:11, :3]
+            label = dataset['input'][:,1:50, :3]
             output = torch.stack(outputs,dim=1)
             loss = _loss/count
         else:
@@ -210,8 +228,12 @@ class RKTrainer(Normal_trainer):
             count = 0
             input = dataset['input'][:,0, :self.input_size]
             speed = dataset['input'][:,1, :self.input_size] - dataset['input'][:,0, :self.input_size]
-            for i in range(1,dataset['input'].shape[1] - 1):
-                output = model(input, speed)
+            criterion = nn.MSELoss()
+            for i in range(dataset['input'].shape[1] - 1):
+                time = (i)*0.01
+                time = torch.tensor(time)
+                time = time.repeat(input.shape[0],1)
+                output = model(input, time)
                 outputs.append(output)
                 speed = output - input
                 label = dataset['input'][:,i + 1, :3]
@@ -220,6 +242,6 @@ class RKTrainer(Normal_trainer):
                 input = output
                 count += 1
             loss = _loss/count
-            label = dataset['input'][:,2:, :3]
+            label = dataset['input'][:,1:, :3]
             output = torch.stack(outputs, dim = 1)
         return output, label, loss
